@@ -1,0 +1,6 @@
+{
+  "name": "Aura · Digital Product Studio & Lab",
+  "description": "An award-winning digital experience studio and interactive product design atelier specializing in human-centered interfaces, systems architecture, and rapid engineering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
