@@ -6,7 +6,7 @@ import { createServer as createViteServer } from 'vite';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -987,6 +987,10 @@ async function searchTmdbAndGlobalMovies(query: string): Promise<TmdbMovieItem[]
 async function startServer() {
   const app = express();
   app.use(express.json());
+
+  app.get('/api/health', (_req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
 
   /**
    * 1. TMDB Discovery Feed (/api/tmdb/discover)

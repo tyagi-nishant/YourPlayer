@@ -124,3 +124,26 @@ export interface SampleMediaPreset {
   thumbnailUrl?: string;
   duration?: string;
 }
+
+export type ThemeMode = 'dark' | 'light';
+export type PaletteTone = 'indigo' | 'emerald' | 'rose' | 'amber' | string;
+export type DiscoveryBooking = Record<string, any>;
+export interface ProjectCaseStudy {
+  [key: string]: any;
+  metrics?: any[];
+  technologies?: string[];
+  tags?: string[];
+}
+export type ProjectEstimateConfig = Record<string, any>;
+export interface MediaItem {
+  [key: string]: any;
+  chapters?: any[];
+}
+export type ToastMessage = Record<string, any>;
+export interface StudioService {
+  [key: string]: any;
+  capabilities?: string[];
+  outcomes?: string[];
+  tools?: string[];
+}
+
