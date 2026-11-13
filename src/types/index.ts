@@ -132,7 +132,7 @@ export interface ProjectCaseStudy {
   [key: string]: any;
   metrics: any[];
   technologies: string[];
-  tags: string[];
+  tags?: string[];
 }
 export type ProjectEstimateConfig = Record<string, any>;
 export interface MediaItem {
@@ -144,7 +144,6 @@ export interface StudioService {
   [key: string]: any;
   capabilities: string[];
   outcomes: string[];
-  tools: string[];
-  tooling: string[];
+  technologies: string[];
 }
 
