@@ -1,5 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ResolvedMedia, RecentMediaItem, TmdbMovie } from './types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  InternalEndpointItem,
+  InternalEndpointResolveResponse,
+  ResolvedMedia,
+  RecentMediaItem,
+  TmdbMovie,
+} from './types';
 import {
   resolveMediaUrl,
   extractUrlsFromInput,
@@ -11,8 +17,9 @@ import { UrlInput } from './components/UrlInput';
 import { MediaPlayer } from './components/MediaPlayer';
 import { RecentMedia } from './components/RecentMedia';
 import { MovieDiscoveryHub } from './components/MovieDiscoveryHub';
+import { InternalEndpointsHub } from './components/InternalEndpointsHub';
 import { PlatformBadge } from './components/PlatformBadge';
-import { Play, X, Film } from 'lucide-react';
+import { Play, X, Film, Server } from 'lucide-react';
 
 const STORAGE_KEY = 'playspace_recent_media_v2';
 const MAX_HISTORY_ITEMS = 9;
@@ -23,7 +30,14 @@ function loadRecentHistory(): RecentMediaItem[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.slice(0, MAX_HISTORY_ITEMS);
+    return parsed
+      .filter(
+        (item: RecentMediaItem) =>
+          item &&
+          item.provider !== 'internal' &&
+          !String(item.originalUrl || '').startsWith('internal://')
+      )
+      .slice(0, MAX_HISTORY_ITEMS);
   } catch {
     return [];
   }
@@ -41,12 +55,21 @@ function saveRecentHistory(items: RecentMediaItem[]) {
 }
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'home' | 'player'>('home');
+  const [currentView, setCurrentView] = useState<
+    'home' | 'internal' | 'player'
+  >('home');
   const [activeCategory, setActiveCategory] =
     useState<DiscoveryCategoryTab>('all');
   const [urlInput, setUrlInput] = useState<string>('');
   const [isValidating, setIsValidating] = useState<boolean>(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Environment-configured Internal Endpoints state (fetched strictly from server)
+  const [internalEndpoints, setInternalEndpoints] = useState<
+    InternalEndpointItem[]
+  >([]);
+  const [isLoadingInternalEndpoints, setIsLoadingInternalEndpoints] =
+    useState<boolean>(true);
 
   // Optional TMDB movie that the user is attaching a custom URL to
   const [targetMovieForCustomUrl, setTargetMovieForCustomUrl] =
@@ -65,14 +88,57 @@ export default function App() {
   const homeInputRef = useRef<HTMLInputElement | null>(null);
   const playerSwitcherInputRef = useRef<HTMLInputElement | null>(null);
 
+  const fetchInternalEndpoints = useCallback(async () => {
+    setIsLoadingInternalEndpoints(true);
+    try {
+      const resp = await fetch('/api/internal-endpoints', {
+        cache: 'no-store',
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const nextList: InternalEndpointItem[] = Array.isArray(data.endpoints)
+          ? data.endpoints
+          : [];
+        setInternalEndpoints(nextList);
+
+        // If an internal endpoint was removed from environment variables while active, revoke active session
+        setActiveMedia((prev) => {
+          if (prev?.provider === 'internal' && prev.internalEndpointId) {
+            const stillExists = nextList.some(
+              (ep) => ep.id === prev.internalEndpointId
+            );
+            if (!stillExists) {
+              return null;
+            }
+          }
+          return prev;
+        });
+      }
+    } catch {
+      // Ignore network hiccup
+    } finally {
+      setIsLoadingInternalEndpoints(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchInternalEndpoints();
+  }, [fetchInternalEndpoints]);
+
   useEffect(() => {
     saveRecentHistory(recentItems);
   }, [recentItems]);
 
   const upsertRecentMedia = (media: ResolvedMedia) => {
     if (media.status !== 'playable') return;
-    // Do not persist temporary blob:// URLs in localStorage across reloads
-    if (media.originalUrl.startsWith('blob:')) return;
+    // Never persist temporary local blob:// URLs or server-configured internal endpoints in localStorage
+    if (
+      media.originalUrl.startsWith('blob:') ||
+      media.provider === 'internal' ||
+      media.originalUrl.startsWith('internal://')
+    ) {
+      return;
+    }
 
     const timestamp = new Date().toLocaleTimeString([], {
       hour: '2-digit',
@@ -297,14 +363,65 @@ export default function App() {
         playerSwitcherInputRef.current?.select();
       }, 40);
     } else {
-      const studioEl = document.getElementById('custom-url-studio');
-      if (studioEl) {
-        studioEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (currentView !== 'home') {
+        setCurrentView('home');
       }
       setTimeout(() => {
+        const studioEl = document.getElementById('custom-url-studio');
+        if (studioEl) {
+          studioEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
         homeInputRef.current?.focus();
         homeInputRef.current?.select();
-      }, 120);
+      }, 100);
+    }
+  };
+
+  const handleOpenInternalEndpoints = () => {
+    setValidationError(null);
+    setShowPlayerUrlSwitcher(false);
+    setCurrentView('internal');
+    fetchInternalEndpoints();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handlePlayInternalMedia = (media: ResolvedMedia) => {
+    setValidationError(null);
+    setActiveSimilarMovies([]);
+    setTargetMovieForCustomUrl(null);
+    setShowPlayerUrlSwitcher(false);
+    setActiveMedia(media);
+    setCurrentView('player');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleQuickSwitchInternalEndpoint = async (
+    endpoint: InternalEndpointItem
+  ) => {
+    try {
+      const resp = await fetch(
+        `/api/internal-endpoints/${encodeURIComponent(endpoint.id)}/resolve`,
+        { cache: 'no-store' }
+      );
+      if (!resp.ok) {
+        await fetchInternalEndpoints();
+        setCurrentView('internal');
+        return;
+      }
+      const data: InternalEndpointResolveResponse = await resp.json();
+      if (!data.reachable) {
+        setCurrentView('internal');
+        return;
+      }
+      if (data.catalogItems && data.catalogItems.length > 1) {
+        setCurrentView('internal');
+        return;
+      }
+      if (data.media) {
+        handlePlayInternalMedia(data.media);
+      }
+    } catch {
+      setCurrentView('internal');
     }
   };
 
@@ -332,6 +449,7 @@ export default function App() {
         currentView={currentView}
         activeCategory={activeCategory}
         hasActiveMedia={Boolean(activeMedia)}
+        internalEndpointsCount={internalEndpoints.length}
         onSelectCategory={(cat) => {
           setActiveCategory(cat);
           if (currentView !== 'home') {
@@ -339,6 +457,7 @@ export default function App() {
           }
           setValidationError(null);
         }}
+        onOpenInternalEndpoints={handleOpenInternalEndpoints}
         onReturnToPlayer={() => {
           if (activeMedia) {
             setCurrentView('player');
@@ -350,7 +469,49 @@ export default function App() {
 
       {/* Main Content Stage */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-        {currentView === 'home' ? (
+        {currentView === 'internal' ? (
+          <div className="space-y-8 transition-opacity duration-200">
+            {activeMedia && (
+              <div className="max-w-6xl mx-auto p-3.5 rounded-2xl bg-[#12131b] border border-amber-400/30 flex items-center justify-between gap-4 shadow-lg">
+                <div className="flex items-center gap-3 min-w-0">
+                  <PlatformBadge
+                    provider={activeMedia.provider}
+                    label={activeMedia.providerName}
+                    size="sm"
+                  />
+                  <span className="text-xs sm:text-sm font-semibold text-neutral-200 truncate">
+                    {activeMedia.title}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('player')}
+                  className="px-4 py-1.5 text-xs font-bold text-neutral-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>Return to Player</span>
+                </button>
+              </div>
+            )}
+
+            <InternalEndpointsHub
+              endpoints={internalEndpoints}
+              isLoading={isLoadingInternalEndpoints}
+              activeEndpointId={
+                activeMedia?.provider === 'internal'
+                  ? activeMedia.internalEndpointId
+                  : undefined
+              }
+              onRefresh={fetchInternalEndpoints}
+              onPlayResolvedMedia={handlePlayInternalMedia}
+              onBackToDiscover={() => {
+                setCurrentView('home');
+                setValidationError(null);
+              }}
+            />
+          </div>
+        ) : currentView === 'home' ? (
           <div className="space-y-14 transition-opacity duration-200">
             {/* Resume Active Session Banner when on Home View */}
             {activeMedia && (
@@ -403,12 +564,35 @@ export default function App() {
                 Your streams. Official trailers. One theatre.
               </h1>
 
-              <p className="text-sm sm:text-base text-neutral-400 max-w-2xl mx-auto leading-relaxed mb-7">
+              <p className="text-sm sm:text-base text-neutral-400 max-w-2xl mx-auto leading-relaxed mb-6">
                 Explore upcoming movies, high-resolution posters, and tailored
                 recommendations powered by TMDB, watch official trailers via
-                YouTube, or paste your own video URL and local files to stream
-                any movie.
+                YouTube, paste a custom stream URL, or switch to
+                environment-configured internal endpoints.
               </p>
+
+              {/* Workspace Stream Source Switcher (Public URL & File vs Internal Env Endpoints) */}
+              <div className="inline-flex items-center gap-1 p-1 mb-6 rounded-xl bg-[#111218] border border-white/[0.08]">
+                <button
+                  type="button"
+                  onClick={() => homeInputRef.current?.focus()}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-amber-400 text-neutral-950 transition-colors whitespace-nowrap shrink-0"
+                >
+                  Public URL &amp; Local File
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenInternalEndpoints}
+                  className="px-4 py-2 text-xs font-medium rounded-lg text-neutral-300 hover:text-white hover:bg-white/[0.05] transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 tabular-nums"
+                >
+                  <Server className="w-3.5 h-3.5 text-amber-400" />
+                  <span>
+                    {internalEndpoints.length > 0
+                      ? `Internal Endpoints (${internalEndpoints.length})`
+                      : 'Internal Endpoints'}
+                  </span>
+                </button>
+              </div>
 
               {/* Context Banner if user selected a TMDB movie to attach a custom URL to */}
               {targetMovieForCustomUrl && (
@@ -529,10 +713,13 @@ export default function App() {
               <MediaPlayer
                 media={activeMedia}
                 similarMovies={activeSimilarMovies}
+                internalEndpoints={internalEndpoints}
                 onBackHome={() => {
                   setCurrentView('home');
                   setValidationError(null);
                 }}
+                onOpenInternalEndpoints={handleOpenInternalEndpoints}
+                onSelectInternalEndpoint={handleQuickSwitchInternalEndpoint}
                 onPlayAnother={() => {
                   setShowPlayerUrlSwitcher(true);
                   setTimeout(() => {

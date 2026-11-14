@@ -9,10 +9,12 @@ export type DiscoveryCategoryTab =
   | 'top_rated';
 
 interface AppHeaderProps {
-  currentView: 'home' | 'player';
+  currentView: 'home' | 'internal' | 'player';
   activeCategory: DiscoveryCategoryTab;
   hasActiveMedia: boolean;
+  internalEndpointsCount: number;
   onSelectCategory: (cat: DiscoveryCategoryTab) => void;
+  onOpenInternalEndpoints: () => void;
   onReturnToPlayer: () => void;
   onFocusUrlInput: () => void;
 }
@@ -21,7 +23,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   currentView,
   activeCategory,
   hasActiveMedia,
+  internalEndpointsCount,
   onSelectCategory,
+  onOpenInternalEndpoints,
   onReturnToPlayer,
   onFocusUrlInput,
 }) => {
@@ -51,7 +55,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           PlaySpace
         </a>
 
-        {/* Zone 2: 4–5 single-line navigation links */}
+        {/* Zone 2: 5 concise single-line navigation links */}
         <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-neutral-400">
           <a
             href="#discover-hub"
@@ -99,17 +103,23 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           </a>
 
           <a
-            href="#custom-url-studio"
+            href="#internal-endpoints"
             onClick={(e) => {
               e.preventDefault();
-              onFocusUrlInput();
+              onOpenInternalEndpoints();
             }}
-            className="hover:text-white transition-colors whitespace-nowrap shrink-0 py-1"
+            className={`hover:text-white transition-colors whitespace-nowrap shrink-0 py-1 tabular-nums ${
+              currentView === 'internal'
+                ? 'text-white underline decoration-amber-500 decoration-2 underline-offset-8'
+                : ''
+            }`}
           >
-            URL Player
+            {internalEndpointsCount > 0
+              ? `Internal Endpoints (${internalEndpointsCount})`
+              : 'Internal Endpoints'}
           </a>
 
-          {hasActiveMedia && (
+          {hasActiveMedia ? (
             <a
               href="#player"
               onClick={(e) => {
@@ -124,12 +134,23 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             >
               Now Playing
             </a>
+          ) : (
+            <a
+              href="#custom-url-studio"
+              onClick={(e) => {
+                e.preventDefault();
+                onFocusUrlInput();
+              }}
+              className="hover:text-white transition-colors whitespace-nowrap shrink-0 py-1"
+            >
+              URL Player
+            </a>
           )}
         </nav>
 
         {/* Zone 3: 1 Primary CTA button */}
         <div className="flex items-center gap-3 shrink-0">
-          {currentView === 'home' && hasActiveMedia ? (
+          {currentView !== 'player' && hasActiveMedia ? (
             <button
               type="button"
               onClick={onReturnToPlayer}

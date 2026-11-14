@@ -10,6 +10,7 @@ import {
   Compass,
   HardDrive,
   Radio,
+  Server,
 } from 'lucide-react';
 
 interface PlatformBadgeProps {
@@ -32,6 +33,8 @@ export const PlatformBadge: React.FC<PlatformBadgeProps> = ({
     const iconClass =
       size === 'sm' ? 'w-3.5 h-3.5 shrink-0' : 'w-4 h-4 shrink-0';
     switch (provider) {
+      case 'internal':
+        return <Server className={`${iconClass} text-amber-400`} />;
       case 'youtube':
         return <PlaySquare className={`${iconClass} text-rose-500`} />;
       case 'hls':
@@ -57,7 +60,9 @@ export const PlatformBadge: React.FC<PlatformBadgeProps> = ({
 
   const displayName =
     label ||
-    (provider === 'youtube'
+    (provider === 'internal'
+      ? 'Internal Endpoint'
+      : provider === 'youtube'
       ? 'YouTube'
       : provider === 'hls'
       ? 'HLS Adaptive Stream'

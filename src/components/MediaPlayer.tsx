@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Hls from 'hls.js';
 import {
+  InternalEndpointItem,
   ResolvedMedia,
   SubtitleTrackOption,
   TmdbMovie,
@@ -27,12 +28,17 @@ import {
   PictureInPicture2,
   RotateCw,
   Film,
+  Server,
+  Radio,
 } from 'lucide-react';
 
 interface MediaPlayerProps {
   media: ResolvedMedia;
   similarMovies?: TmdbMovie[];
+  internalEndpoints?: InternalEndpointItem[];
   onBackHome: () => void;
+  onOpenInternalEndpoints?: () => void;
+  onSelectInternalEndpoint?: (endpoint: InternalEndpointItem) => void;
   onPlayAnother: () => void;
   onSelectSampleUrl: (url: string) => void;
   onWatchMovieTrailer?: (movie: TmdbMovie) => void;
@@ -126,7 +132,10 @@ function parseVttOrSrtToCues(rawContent: string): ParsedSubtitleCue[] {
 export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   media,
   similarMovies = [],
+  internalEndpoints = [],
   onBackHome,
+  onOpenInternalEndpoints,
+  onSelectInternalEndpoint,
   onPlayAnother,
   onSelectSampleUrl,
   onWatchMovieTrailer,
@@ -186,12 +195,26 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     setPlaybackError(null);
     setActivePanel(null);
 
+    if (media.initialSubtitles && media.initialSubtitles.length > 0) {
+      setSubtitleTracks(media.initialSubtitles);
+      setActiveSubtitleId(media.initialSubtitles[0].id);
+    } else {
+      setSubtitleTracks([]);
+      setActiveSubtitleId('off');
+    }
+
     const timer = setTimeout(() => {
       setIsLoading(false);
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [media.originalUrl, media.embedUrl, media.directVideoUrl, media.hlsUrl]);
+  }, [
+    media.originalUrl,
+    media.embedUrl,
+    media.directVideoUrl,
+    media.hlsUrl,
+    media.initialSubtitles,
+  ]);
 
   // Fetch and parse active subtitle track into cues
   useEffect(() => {
@@ -574,11 +597,19 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <button
           type="button"
-          onClick={onBackHome}
+          onClick={
+            media.provider === 'internal' && onOpenInternalEndpoints
+              ? onOpenInternalEndpoints
+              : onBackHome
+          }
           className="px-3.5 py-2 text-xs sm:text-sm font-medium text-neutral-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] rounded-xl transition-colors inline-flex items-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Discover</span>
+          <span>
+            {media.provider === 'internal' && onOpenInternalEndpoints
+              ? 'Back to Internal Endpoints'
+              : 'Back to Discover'}
+          </span>
         </button>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -616,6 +647,18 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
             <span className="hidden sm:inline">Fullscreen</span>
           </button>
 
+          {onOpenInternalEndpoints && (
+            <button
+              type="button"
+              onClick={onOpenInternalEndpoints}
+              className="px-3.5 py-2 text-xs font-medium text-neutral-200 hover:text-white bg-white/[0.06] hover:bg-white/[0.12] rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+              title="Open environment-configured internal endpoints"
+            >
+              <Server className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Internal Endpoints</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => localVideoInputRef.current?.click()}
@@ -632,7 +675,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
             className="px-4 py-2 text-xs sm:text-sm font-bold text-neutral-950 bg-amber-400 hover:bg-amber-300 rounded-xl transition-colors inline-flex items-center gap-2 whitespace-nowrap shadow-md shadow-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
           >
             <Link2 className="w-3.5 h-3.5" />
-            <span>Load Another URL</span>
+            <span>Load Public URL</span>
           </button>
         </div>
       </div>
@@ -1016,28 +1059,43 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
               />
             )}
 
-            {/* 3. Standard HTML5 Video Player for Direct MP4 / WebM / Local Uploaded Files */}
+            {/* 3. Standard HTML5 Video/Audio Player for Direct MP4 / WebM / Audio / Local Uploaded Files */}
             {currentDirectVideoUrl && !currentHlsUrl && !currentEmbedUrl && (
-              <video
-                ref={directVideoRef}
-                key={`${currentDirectVideoUrl}-${reloadKey}`}
-                src={currentDirectVideoUrl}
-                controls
-                autoPlay
-                playsInline
-                poster={attachedMovie?.backdropUrl}
-                className="w-full h-full object-contain bg-black"
-                onLoadedData={() => setIsLoading(false)}
-                onCanPlay={() => setIsLoading(false)}
-                onError={() => {
-                  setIsLoading(false);
-                  setPlaybackError(
-                    'The direct video file could not be decoded or reached.'
-                  );
-                }}
-              >
-                Your browser does not support native HTML5 video playback.
-              </video>
+              <>
+                {media.mediaKind === 'audio' && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none bg-gradient-to-b from-[#11121a] to-[#08080c] px-6 text-center">
+                    <Radio className="w-10 h-10 text-amber-400 mb-3" />
+                    <p className="text-base sm:text-lg font-bold text-white max-w-lg truncate">
+                      {media.title}
+                    </p>
+                    <p className="text-xs text-neutral-400 mt-1">
+                      {media.providerName}
+                    </p>
+                  </div>
+                )}
+                <video
+                  ref={directVideoRef}
+                  key={`${currentDirectVideoUrl}-${reloadKey}`}
+                  src={currentDirectVideoUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  poster={attachedMovie?.backdropUrl}
+                  className="relative z-10 w-full h-full object-contain bg-transparent"
+                  onLoadedData={() => setIsLoading(false)}
+                  onCanPlay={() => setIsLoading(false)}
+                  onError={() => {
+                    setIsLoading(false);
+                    setPlaybackError(
+                      media.provider === 'internal'
+                        ? 'The internal endpoint stream could not be decoded or reached by the server proxy.'
+                        : 'The direct video file could not be decoded or reached.'
+                    );
+                  }}
+                >
+                  Your browser does not support native HTML5 video playback.
+                </video>
+              </>
             )}
           </div>
 
@@ -1179,27 +1237,28 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
                   </button>
                 )}
 
-              {media.provider !== 'local_file' && (
-                <button
-                  type="button"
-                  onClick={handleCopySourceUrl}
-                  className="px-3.5 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
-                >
-                  {copiedUrl ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-400">Link Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Stream URL</span>
-                    </>
-                  )}
-                </button>
-              )}
+              {media.provider !== 'local_file' &&
+                media.provider !== 'internal' && (
+                  <button
+                    type="button"
+                    onClick={handleCopySourceUrl}
+                    className="px-3.5 py-2 text-xs font-medium text-neutral-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] rounded-xl transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    {copiedUrl ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">Link Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Stream URL</span>
+                      </>
+                    )}
+                  </button>
+                )}
 
-              {media.externalActionUrl && (
+              {media.externalActionUrl && media.provider !== 'internal' && (
                 <a
                   href={media.externalActionUrl}
                   target="_blank"
@@ -1212,6 +1271,71 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
               )}
             </div>
           </div>
+
+          {/* Quick Internal Endpoint Switcher when playing an internal stream and multiple endpoints exist */}
+          {media.provider === 'internal' &&
+            internalEndpoints.length > 1 &&
+            onSelectInternalEndpoint && (
+              <div className="mt-5 p-5 rounded-2xl bg-[#101118] border border-white/[0.08] space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-sm font-bold text-white">
+                    Switch Active Internal Endpoint
+                  </h2>
+                  {onOpenInternalEndpoints && (
+                    <button
+                      type="button"
+                      onClick={onOpenInternalEndpoints}
+                      className="text-xs font-medium text-amber-400 hover:text-amber-300 whitespace-nowrap"
+                    >
+                      View all ({internalEndpoints.length})
+                    </button>
+                  )}
+                </div>
+
+                <div className="divide-y divide-white/[0.06] border-t border-b border-white/[0.06]">
+                  {internalEndpoints.map((ep, idx) => {
+                    const isCurrent = media.internalEndpointId === ep.id;
+                    return (
+                      <div
+                        key={ep.id}
+                        className="py-2.5 flex items-center justify-between gap-4"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs sm:text-sm font-semibold text-white truncate">
+                            <span className="font-mono tabular-nums text-neutral-500 mr-2">
+                              {String(idx + 1).padStart(2, '0')}.
+                            </span>
+                            {ep.name}
+                          </div>
+                          <div className="text-[11px] text-neutral-400 pl-6 truncate">
+                            <span className="font-mono">{ep.envKey}</span>
+                            <span aria-hidden="true" className="mx-1.5">
+                              ·
+                            </span>
+                            <span>{ep.protocolLabel}</span>
+                          </div>
+                        </div>
+
+                        {isCurrent ? (
+                          <span className="text-xs font-semibold text-amber-400 whitespace-nowrap shrink-0">
+                            Playing Now
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onSelectInternalEndpoint(ep)}
+                            className="px-3 py-1.5 text-xs font-semibold text-neutral-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Switch</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
           {/* If watching a TMDB movie trailer, offer instant "Stream Custom URL / File for This Movie" + Similar Movie Recommendations */}
           {attachedMovie && (

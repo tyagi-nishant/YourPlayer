@@ -4,6 +4,7 @@ export type ProviderType =
   | 'direct'
   | 'hls'
   | 'local_file'
+  | 'internal'
   | 'netflix'
   | 'dailymotion'
   | 'twitch'
@@ -42,6 +43,46 @@ export interface TmdbMovie {
   featured?: boolean;
 }
 
+export interface InternalEndpointItem {
+  id: string;
+  name: string;
+  envKey: string;
+  maskedTarget: string;
+  protocolHint:
+    | 'hls'
+    | 'direct'
+    | 'audio'
+    | 'embed'
+    | 'json'
+    | 'm3u'
+    | 'youtube'
+    | 'vimeo'
+    | 'auto';
+  protocolLabel: string;
+  group?: string;
+}
+
+export interface InternalCatalogStreamItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  media: ResolvedMedia;
+}
+
+export interface InternalEndpointResolveResponse {
+  id: string;
+  name: string;
+  envKey: string;
+  reachable: boolean;
+  httpStatus?: number;
+  contentType?: string;
+  resolvedKind?: 'hls' | 'direct' | 'audio' | 'embed' | 'catalog';
+  resolvedLabel?: string;
+  media?: ResolvedMedia;
+  catalogItems?: InternalCatalogStreamItem[];
+  error?: string;
+}
+
 export interface ResolvedMedia {
   status: ResolutionStatus;
   provider: ProviderType;
@@ -60,7 +101,10 @@ export interface ResolvedMedia {
   portalSearchQuery?: string;
   imdbId?: string;
   tmdbMovie?: TmdbMovie;
-  playbackMode?: 'trailer' | 'custom_stream';
+  playbackMode?: 'trailer' | 'custom_stream' | 'internal_endpoint';
+  mediaKind?: 'video' | 'audio';
+  internalEndpointId?: string;
+  initialSubtitles?: SubtitleTrackOption[];
   errorMessage?: string;
   reason?: string;
   externalActionUrl?: string;
